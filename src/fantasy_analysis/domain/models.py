@@ -8,6 +8,7 @@ from typing import Literal
 
 Position = Literal["QB", "RB", "WR", "TE", "K", "DST"]
 Slot = Literal["QB", "RB", "WR", "TE", "FLEX", "DST", "K", "BENCH", "IR"]
+MatchupKind = Literal["REGULAR_SEASON", "PLAYOFF", "CONSOLATION"]
 
 ALL_POSITIONS: frozenset[Position] = frozenset({"QB", "RB", "WR", "TE", "K", "DST"})
 
@@ -24,6 +25,10 @@ SLOT_RULES: dict[Slot, tuple[frozenset[Position], int]] = {
     "IR": (ALL_POSITIONS, 1),
 }
 NON_STARTING_SLOTS: frozenset[Slot] = frozenset({"BENCH", "IR"})
+# Max players outside IR. The bench can exceed its nominal size when a starting slot is left empty.
+ACTIVE_ROSTER_SIZE = sum(
+    max_players for slot, (_, max_players) in SLOT_RULES.items() if slot != "IR"
+)
 
 
 @dataclass(frozen=True)
@@ -68,8 +73,12 @@ class Lineup:
         slot_counts: Counter[Slot] = Counter(e.slot for e in self.entries)
         for slot, count in slot_counts.items():
             _, max_players = SLOT_RULES[slot]
-            if count > max_players:
+            if slot != "BENCH" and count > max_players:
                 raise ValueError(f"{slot} holds at most {max_players} players, got {count}")
+
+        active = len(self.entries) - slot_counts["IR"]
+        if active > ACTIVE_ROSTER_SIZE:
+            raise ValueError(f"at most {ACTIVE_ROSTER_SIZE} players outside IR, got {active}")
 
         ids = [e.player.player_id for e in self.entries]
         if len(ids) != len(set(ids)):
@@ -114,13 +123,18 @@ class Matchup:
     away: Team | None
     home_score: float
     away_score: float | None = None
-    is_playoff: bool = False
+    kind: MatchupKind = "REGULAR_SEASON"
 
     def __post_init__(self):
         if self.away is None and self.away_score is not None:
             raise ValueError("a bye week can't have an away score")
         if self.away is not None and self.away == self.home:
             raise ValueError(f"{self.home.name} can't play itself")
+
+    @property
+    def is_playoff(self) -> bool:
+        """True for championship-bracket games (not consolation games)."""
+        return self.kind == "PLAYOFF"
 
     @property
     def winner(self) -> Team | None:
