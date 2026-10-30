@@ -27,6 +27,7 @@ dev = [
     "ipykernel",
     "pytest",
     "ruff",
+    "nbstripout>=0.9.1",
 ]
 
 [build-system]
