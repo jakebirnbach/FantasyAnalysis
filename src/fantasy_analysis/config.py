@@ -12,5 +12,11 @@ class Settings(BaseSettings):
 
     data_dir: Path = PROJECT_ROOT / "data"
 
+    # ESPN fantasy league. espn_s2 / espn_swid are only needed for private leagues.
+    espn_league_id: int | None = None
+    espn_season: int = 2026
+    espn_s2: str | None = None
+    espn_swid: str | None = None
+
 
 settings = Settings()

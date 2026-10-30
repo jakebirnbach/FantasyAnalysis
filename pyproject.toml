@@ -18,6 +18,7 @@ dependencies = [
     "httpx",
     "pydantic",
     "pydantic-settings",
+    "espn-api>=1.0.1",
 ]
 
 [dependency-groups]
