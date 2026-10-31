@@ -104,7 +104,7 @@ class Team:
 
     team_id: int
     name: str
-    owners: list[str]
+    owner: str
     lineups: dict[int, Lineup] = field(default_factory=dict, repr=False)  # week -> Lineup
 
     def __eq__(self, other: object) -> bool:

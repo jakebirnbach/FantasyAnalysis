@@ -42,7 +42,9 @@ Don't write a separate HTTP client.
   table (and to the domain `Slot`/`Position`/`SLOT_RULES` if it's a new concept) rather than
   dropping data silently. ESPN has many more slot IDs (`OP`, `TQB`, IDP slots and others, in
   `espn_api.football.constant.POSITION_MAP`) that this league doesn't use.
-- Owners: ESPN member records joined as `"firstName lastName"`, falling back to `displayName`.
+- Owner: the team's first ESPN member record, as `"firstName lastName"`, falling back to
+  `displayName`. ESPN allows co-owners, but every team in this league has exactly one
+  (checked for 2025 and 2026). A team with no owner raises an error.
 
 ## ESPN quirks (each one has caused, or would cause, a bug)
 

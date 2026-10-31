@@ -69,8 +69,8 @@ def _entry_row(entry: LineupEntry) -> dict:
 
 def teams_frame(league: League) -> pd.DataFrame:
     return pd.DataFrame(
-        [(t.team_id, t.name, ", ".join(t.owners), len(t.lineups)) for t in league.teams],
-        columns=["team_id", "name", "owners", "weeks_with_lineup"],
+        [(t.team_id, t.name, t.owner, len(t.lineups)) for t in league.teams],
+        columns=["team_id", "name", "owner", "weeks_with_lineup"],
     )
 
 

@@ -51,11 +51,12 @@ def _lookup[T](mapping: dict[str, T], value: str, what: str) -> T:
 
 
 def to_team(espn_team: EspnTeam) -> Team:
-    owners = [
-        f"{o.get('firstName', '')} {o.get('lastName', '')}".strip() or o.get("displayName", "")
-        for o in espn_team.owners
-    ]
-    return Team(team_id=espn_team.team_id, name=espn_team.team_name, owners=owners)
+    # ESPN allows co-owners, but every team in this league has exactly one; use the first.
+    if not espn_team.owners:
+        raise ValueError(f"ESPN team {espn_team.team_name!r} has no owner")
+    o = espn_team.owners[0]
+    owner = f"{o.get('firstName', '')} {o.get('lastName', '')}".strip() or o.get("displayName", "")
+    return Team(team_id=espn_team.team_id, name=espn_team.team_name, owner=owner)
 
 
 def to_player(box_player: BoxPlayer) -> Player:

@@ -28,7 +28,7 @@ editing. This skill records the design decisions and the reasons behind them.
 | `Player` | `player_id`, `name`, `position`, `pro_team` | One `name` field. Splitting into first/last is lossy ("Amon-Ra St. Brown"); D/ST is e.g. "Bears D/ST". |
 | `LineupEntry` | `slot`, `player`, `points`, `projected_points` | One player in one slot for one week. Bench players have points too, which allows "points left on bench" analysis. |
 | `Lineup` | `entries: tuple[LineupEntry, ...]` | `.starters`, `.bench` (BENCH + IR), `.points` = sum of starters' points = the team's score. |
-| `Team` | `team_id`, `name`, `owners: list[str]`, `lineups: dict[week, Lineup]` | Co-owners are allowed. "Roster" is deliberately not used for weekly lineups. |
+| `Team` | `team_id`, `name`, `owner: str`, `lineups: dict[week, Lineup]` | One owner per team: every team in this league has exactly one. "Roster" is deliberately not used for weekly lineups. |
 | `Matchup` | `week`, `home`, `away \| None`, `home_score`, `away_score`, `kind` | `away=None` is a bye. `.winner` is None for ties, byes and unplayed games. |
 | `League` | `league_id`, `name`, `season`, `teams`, `matchups` | One season. `num_teams` = `len(teams)`. `.schedule(team)` = that team's matchups in week order. |
 
