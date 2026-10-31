@@ -33,17 +33,23 @@ class EspnLeagueRepository:
 
         matchups: list[Matchup] = []
         player_team_cache: dict = {}  # shared across weeks so bye-week players keep their team
+        stats_registry: mappers.StatsRegistry = {}  # one stats dict per player, for the season
+        nfl_teams: mappers.NFLTeamRegistry = {}  # one NFLTeam per abbreviation, for the season
         for week in range(1, last_completed_week(espn) + 1):
             for box in espn.box_scores(week=week, player_team_cache=player_team_cache):
                 if box.home_team is None:  # ESPN puts a bye team on the home side
                     continue
                 home = teams[box.home_team.team_id]
-                home.lineups[week] = mappers.to_lineup(box.home_lineup, rules)
+                home.lineups[week] = mappers.to_lineup(
+                    box.home_lineup, rules, stats_registry, nfl_teams
+                )
 
                 away: Team | None = None
                 if box.away_team is not None:
                     away = teams[box.away_team.team_id]
-                    away.lineups[week] = mappers.to_lineup(box.away_lineup, rules)
+                    away.lineups[week] = mappers.to_lineup(
+                        box.away_lineup, rules, stats_registry, nfl_teams
+                    )
 
                 matchups.append(
                     Matchup(
@@ -62,4 +68,5 @@ class EspnLeagueRepository:
             season=season,
             teams=list(teams.values()),
             matchups=matchups,
+            nfl_teams=nfl_teams,
         )

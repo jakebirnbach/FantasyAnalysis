@@ -20,6 +20,7 @@ dependencies = [
     "pydantic-settings",
     "espn-api>=1.0.1",
     "adjusttext>=1.4.0",
+    "nflreadpy>=0.1.5",
 ]
 
 [dependency-groups]

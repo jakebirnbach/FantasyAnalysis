@@ -25,12 +25,15 @@ editing. This skill records the design decisions and the reasons behind them.
 
 | Entity | Key fields | Notes |
 |---|---|---|
-| `Player` | `player_id`, `name`, `position`, `pro_team` | One `name` field. Splitting into first/last is lossy ("Amon-Ra St. Brown"); D/ST is e.g. "Bears D/ST". |
+| `Player` | `player_id`, `name`, `position`, `pro_team: NFLTeam \| None`, `stats: dict[week, PlayerStats]` | One `name` field. Splitting into first/last is lossy ("Amon-Ra St. Brown"); D/ST is e.g. "Bears D/ST". `stats` is empty until attached (see below). |
+| `NFLTeam` | `abbreviation` (ESPN's form: `DET`, `LAR`, `WSH`), `stats: dict[week, NFLTeamStats]` | An NFL team. Identity is the abbreviation. One object per team per `League`. `pro_team` is `None` for a free agent. |
+| `NFLTeamStats` | `week`, `opponent: NFLTeam`, `points_scored`, `points_allowed`, offense totals, `yards_allowed`, `sacks`, `interceptions`, `fumbles_recovered`, `defensive_tds`, `safeties`, `blocked_kicks`, `special_teams_tds` | One NFL team's game. Defense/special-teams fields are what a D/ST is scored on. `.takeaways`. No entry on a bye. |
+| `PlayerStats` | `week`, `team: NFLTeam`, `opponent: NFLTeam`, passing/rushing/receiving/kicking counts, `target_share`, `fantasy_points` | One player's NFL box score for one week. `.half_ppr_points` = standard + 0.5/reception, this league's scoring for QB/RB/WR/TE. `fantasy_points` excludes kicking. |
 | `LineupEntry` | `slot`, `player`, `points`, `projected_points` | One player in one slot for one week. Bench players have points too, which allows "points left on bench" analysis. |
 | `Lineup` | `entries: tuple[LineupEntry, ...]` | `.starters`, `.bench` (BENCH + IR), `.points` = sum of starters' points = the team's score. |
 | `Team` | `team_id`, `name`, `owner: str`, `lineups: dict[week, Lineup]` | One owner per team: every team in this league has exactly one. "Roster" is deliberately not used for weekly lineups. |
 | `Matchup` | `week`, `home`, `away \| None`, `home_score`, `away_score`, `kind` | `away=None` is a bye. `.winner` is None for ties, byes and unplayed games. |
-| `League` | `league_id`, `name`, `season`, `teams`, `matchups` | One season. `num_teams` = `len(teams)`. `.schedule(team)` = that team's matchups in week order. |
+| `League` | `league_id`, `name`, `season`, `teams`, `matchups` | One season. `num_teams` = `len(teams)`. `.schedule(team)` = that team's matchups in week order. `.players()` = one `Player` per ID from all lineups. `nfl_teams` + `.nfl_team(abbr)` = the season's NFLTeam objects (get or create). |
 
 `MatchupKind` is `REGULAR_SEASON | PLAYOFF | CONSOLATION`. `Matchup.is_playoff` is true only for
 `PLAYOFF` (the championship bracket). Consolation games are kept separate so they don't skew
@@ -68,9 +71,42 @@ Two rules come from real league data:
   7 bench players (seen in 2026 week 4 and 2025 week 17). The real limit is the active roster
   size.
 
+## NFL teams
+
+NFL teams are `NFLTeam` objects, never strings. `League.nfl_teams` holds **one per team for the
+season**: the ESPN adapter creates them while loading lineups, and stats repositories get
+`league.nfl_team` (a lookup that creates on first use) so every `Player.pro_team`,
+`PlayerStats.team`/`opponent` and `NFLTeamStats.opponent` points at the same object.
+- A **D/ST's stats are its team's**: `dst_player.pro_team.stats[week]` (an `NFLTeamStats`).
+  `Player.stats` is always empty for D/ST.
+- `application.nfl_stats.attach_team_stats(league, repo)` fills every team's `stats`.
+- `NFLTeam` → `stats` → `opponent` → `stats` … forms reference cycles. Don't use
+  `dataclasses.asdict` on stats records (it would recurse); `frames._record` flattens them and
+  writes NFL teams as abbreviations.
+- Abbreviations are ESPN's form. Adapters translate other sources (nflverse `LA`→`LAR`,
+  `WAS`→`WSH`).
+
+## Player stats and shared Player objects
+
+The same player appears as **several `Player` objects**, one per lineup entry, so each keeps
+that week's `pro_team` (a mid-season trade changes it). Equality and hashing use `player_id`
+only. Within one `League`, all of a player's objects **share one `stats` dict**: the ESPN adapter
+hands every copy the same dict from a per-season registry. So:
+- `application.nfl_stats.attach_player_stats(league, repo)` fills each player's dict once,
+  through `league.players()`, and every lineup entry sees it.
+- Don't replace `player.stats`, only mutate it. `Player` is frozen, so it can't be reassigned
+  anyway; `update()` it instead.
+- A `Player` built by hand (e.g. in a test) has its own empty dict.
+- Stats are per season: each `League` load has its own registry, and `stats` is keyed by week.
+
+`PlayerStatsRepository.get_weekly_stats(season, nfl_team)` returns `{player_id: {week: PlayerStats}}` keyed
+by the domain's (ESPN) player ID. The adapter does any ID translation.
+
 ## Not modeled yet
 
-- Weekly player stat breakdowns: `points_breakdown` from espn-api is available but not mapped.
+- ESPN's per-stat fantasy point breakdowns (`points_breakdown`): available but not mapped.
+  NFL box scores come from nflverse instead (`PlayerStats`).
+- Kicker fantasy points from stats (ESPN's `LineupEntry.points` covers rostered weeks).
 - Draft, transactions, free agents, waivers.
 - Multi-week matchups: each `Matchup` is assumed to be one week. True for this league
   (`playoff_matchup_period_length` = 1).

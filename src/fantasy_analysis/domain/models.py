@@ -49,15 +49,117 @@ SLOT_RULES: SlotRules = slot_rules(
 )
 
 
+@dataclass(eq=False)
+class NFLTeam:
+    """An NFL team. Identity is its abbreviation, in ESPN's form (e.g. "DET", "LAR", "WSH").
+
+    Within a League there is one NFLTeam object per team (`League.nfl_team`), so every player
+    and stats record points at the same object and `stats` attached once is seen everywhere.
+    """
+
+    abbreviation: str
+    # week -> that week's team stats. Empty until team stats are attached; no entry on a bye.
+    stats: dict[int, NFLTeamStats] = field(default_factory=dict, repr=False)
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, NFLTeam) and self.abbreviation == other.abbreviation
+
+    def __hash__(self) -> int:
+        return hash(self.abbreviation)
+
+
+@dataclass(frozen=True)
+class NFLTeamStats:
+    """One NFL team's game for one week: offense, defense and special teams.
+
+    Defense and special-teams fields are what a fantasy D/ST is scored on.
+    """
+
+    week: int
+    opponent: NFLTeam
+    points_scored: int
+    points_allowed: int
+    # Offense
+    pass_attempts: int = 0
+    passing_yards: int = 0  # net of sack yardage
+    passing_tds: int = 0
+    carries: int = 0
+    rushing_yards: int = 0
+    rushing_tds: int = 0
+    turnovers: int = 0  # interceptions thrown + fumbles lost
+    # Defense
+    yards_allowed: int = 0  # opponent's net passing + rushing yards
+    sacks: float = 0.0  # half sacks are possible
+    interceptions: int = 0
+    fumbles_recovered: int = 0
+    defensive_tds: int = 0
+    safeties: int = 0
+    blocked_kicks: int = 0  # punts, field goals and extra points
+    # Special teams
+    special_teams_tds: int = 0
+
+    @property
+    def takeaways(self) -> int:
+        return self.interceptions + self.fumbles_recovered
+
+
+@dataclass(frozen=True)
+class PlayerStats:
+    """One player's NFL box score for one week."""
+
+    week: int
+    team: NFLTeam  # the player's NFL team that week
+    opponent: NFLTeam
+    # Passing
+    completions: int = 0
+    attempts: int = 0
+    passing_yards: int = 0
+    passing_tds: int = 0
+    interceptions: int = 0
+    # Rushing
+    carries: int = 0
+    rushing_yards: int = 0
+    rushing_tds: int = 0
+    # Receiving
+    targets: int = 0
+    receptions: int = 0
+    receiving_yards: int = 0
+    receiving_tds: int = 0
+    target_share: float | None = None  # share of the team's targets
+    air_yards_share: float | None = None  # share of the team's air yards
+    # Ball security and extras
+    fumbles_lost: int = 0
+    two_point_conversions: int = 0
+    # Kicking
+    fg_made: int = 0
+    fg_att: int = 0
+    pat_made: int = 0
+    pat_att: int = 0
+    # Standard (non-PPR) fantasy points, excluding kicking
+    fantasy_points: float = 0.0
+
+    @property
+    def half_ppr_points(self) -> float:
+        """This league's scoring for QB/RB/WR/TE: standard plus 0.5 per reception.
+        Not valid for kickers, whose points aren't in `fantasy_points`."""
+        return self.fantasy_points + 0.5 * self.receptions
+
+
 @dataclass(frozen=True)
 class Player:
-    """An NFL player (or team defense). Identity is the ESPN player ID."""
+    """An NFL player (or team defense). Identity is the ESPN player ID.
+
+    The same player can appear as several Player objects (one per lineup entry, each with that
+    week's `pro_team`). Within a League they all share one `stats` dict, so stats attached once
+    are visible from every entry. A D/ST's own stats are its team's: `pro_team.stats[week]`.
+    """
 
     player_id: int
     name: str = field(compare=False)  # e.g. "Amon-Ra St. Brown", "Bears D/ST"
     position: Position = field(compare=False)
-    pro_team: str = field(compare=False)  # NFL team abbreviation, e.g. "DET"
-    # Later: a stats object containing weekly stats for the player
+    pro_team: NFLTeam | None = field(compare=False)  # None for a free agent
+    # week -> that week's stats. Empty for team defenses and until stats are attached.
+    stats: dict[int, PlayerStats] = field(default_factory=dict, compare=False, repr=False)
 
 
 @dataclass(frozen=True)
@@ -176,6 +278,8 @@ class League:
     season: int
     teams: list[Team]
     matchups: list[Matchup] = field(default_factory=list, repr=False)
+    # abbreviation -> the one NFLTeam object for this season. Use nfl_team() to look up or add.
+    nfl_teams: dict[str, NFLTeam] = field(default_factory=dict, repr=False)
 
     def __post_init__(self):
         ids = [t.team_id for t in self.teams]
@@ -199,3 +303,16 @@ class League:
         """A team's matchups, ordered by week."""
         games = [m for m in self.matchups if team in (m.home, m.away)]
         return sorted(games, key=lambda m: m.week)
+
+    def nfl_team(self, abbreviation: str) -> NFLTeam:
+        """This season's NFLTeam for an abbreviation (ESPN's form), created on first use."""
+        return self.nfl_teams.setdefault(abbreviation, NFLTeam(abbreviation))
+
+    def players(self) -> dict[int, Player]:
+        """Every player who appeared in any lineup this season, by player ID."""
+        return {
+            e.player.player_id: e.player
+            for t in self.teams
+            for lineup in t.lineups.values()
+            for e in lineup.entries
+        }

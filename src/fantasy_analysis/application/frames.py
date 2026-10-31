@@ -10,7 +10,14 @@ Each function takes domain objects and returns a DataFrame:
 - lineup_frame(lineup)           one team's lineup for one week
 - lineup_entries_frame(league)   one row per player per team per week, the whole season
 - bench_points_frame(league)     points left on the bench, per team
+- player_stats_frame(league)     one row per player per week of NFL stats (once attached)
+- nfl_team_stats_frame(league)   one row per NFL team per week of team stats (once attached)
+
+NFL teams appear as their abbreviations (e.g. "DET").
 """
+
+from dataclasses import fields
+from typing import Any
 
 import pandas as pd
 
@@ -20,6 +27,9 @@ from fantasy_analysis.domain.models import (
     LineupEntry,
     Matchup,
     MatchupKind,
+    NFLTeam,
+    NFLTeamStats,
+    PlayerStats,
     Team,
 )
 
@@ -45,6 +55,23 @@ LINEUP_COLUMNS = [
 ]
 
 
+def _abbreviation(nfl_team: NFLTeam | None) -> str | None:
+    return nfl_team.abbreviation if nfl_team else None
+
+
+def _record(obj: PlayerStats | NFLTeamStats) -> dict[str, Any]:
+    """A stats record's fields as a flat dict, with NFL teams as abbreviations.
+
+    (dataclasses.asdict would recurse into each NFLTeam and its stats.)
+    """
+    return {
+        f.name: _abbreviation(value)
+        if isinstance(value := getattr(obj, f.name), NFLTeam)
+        else value
+        for f in fields(obj)
+    }
+
+
 def _result(matchup: Matchup, team: Team) -> str:
     """W / L / T / BYE for one team in a matchup."""
     if matchup.away is None:
@@ -61,7 +88,7 @@ def _entry_row(entry: LineupEntry) -> dict:
         "player_id": entry.player.player_id,
         "player": entry.player.name,
         "position": entry.player.position,
-        "pro_team": entry.player.pro_team,
+        "pro_team": _abbreviation(entry.player.pro_team),
         "points": entry.points,
         "projected": entry.projected_points,
     }
@@ -162,3 +189,74 @@ def bench_points_frame(league: League) -> pd.DataFrame:
     return (
         bench.groupby("team")["points"].sum().sort_values(ascending=False).to_frame("bench_points")
     )
+
+
+def player_stats_frame(league: League) -> pd.DataFrame:
+    """One row per player per week of NFL stats, for every player in the league's lineups.
+
+    `espn_points` is ESPN's score under the league's rules (every position, kickers included)
+    for weeks the player was on a fantasy roster, and missing otherwise. `half_ppr_points` is
+    computed from the stats and is 0 for kickers.
+
+    Empty until stats are attached (application.player_stats.attach_player_stats).
+    """
+    espn_points = {
+        (e.player.player_id, week): e.points
+        for t in league.teams
+        for week, lineup in t.lineups.items()
+        for e in lineup.entries
+    }
+    stat_columns = [f.name for f in fields(PlayerStats)]
+    return pd.DataFrame(
+        [
+            {
+                "player_id": player.player_id,
+                "player": player.name,
+                "position": player.position,
+                **_record(stats),
+                "half_ppr_points": stats.half_ppr_points,
+                "espn_points": espn_points.get((player.player_id, stats.week)),
+            }
+            for player in league.players().values()
+            for stats in player.stats.values()
+        ],
+        columns=[
+            "player_id",
+            "player",
+            "position",
+            *stat_columns,
+            "half_ppr_points",
+            "espn_points",
+        ],
+    ).sort_values(["week", "player"], ignore_index=True)
+
+
+def nfl_team_stats_frame(league: League) -> pd.DataFrame:
+    """One row per NFL team per week of team stats (offense, defense, special teams).
+
+    `dst_espn_points` is ESPN's score for that team's D/ST in weeks a fantasy team rostered it,
+    and missing otherwise.
+
+    Empty until team stats are attached (application.nfl_stats.attach_team_stats).
+    """
+    dst_points = {
+        (_abbreviation(e.player.pro_team), week): e.points
+        for t in league.teams
+        for week, lineup in t.lineups.items()
+        for e in lineup.entries
+        if e.player.position == "DST"
+    }
+    stat_columns = [f.name for f in fields(NFLTeamStats)]
+    return pd.DataFrame(
+        [
+            {
+                "team": team.abbreviation,
+                **_record(stats),
+                "takeaways": stats.takeaways,
+                "dst_espn_points": dst_points.get((team.abbreviation, stats.week)),
+            }
+            for team in league.nfl_teams.values()
+            for stats in team.stats.values()
+        ],
+        columns=["team", *stat_columns, "takeaways", "dst_espn_points"],
+    ).sort_values(["week", "team"], ignore_index=True)

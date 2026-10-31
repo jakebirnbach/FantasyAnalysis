@@ -13,7 +13,7 @@ non-obvious about ESPN's data. Read the code before editing.
 | File | Role |
 |---|---|
 | `client.py` | `connect()` builds an `espn_api.football.League`. `last_completed_week()` works out which weeks are final. Refuses seasons before 2019. |
-| `mappers.py` | Pure functions converting espn-api objects to domain models, plus the name translation tables. No network calls, so it's testable offline. |
+| `mappers.py` | Pure functions converting espn-api objects to domain models, plus the name translation tables. No network calls, so it's testable offline. `to_player` takes a `StatsRegistry` (so every copy of a player shares one `stats` dict) and an `NFLTeamRegistry` (one `NFLTeam` per abbreviation, passed to `League.nfl_teams`). espn-api's `proTeam` of `"None"` (free agent) becomes `pro_team=None`. See `domain-models`. |
 | `repository.py` | `EspnLeagueRepository` implements the domain's `LeagueRepository`. `get_league(season)` loads teams, then every completed week's box scores. |
 
 Usage: `EspnLeagueRepository.from_settings(settings).get_league(2025)`. Credentials come from

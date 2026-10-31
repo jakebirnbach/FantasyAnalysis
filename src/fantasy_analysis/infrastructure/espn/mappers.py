@@ -7,7 +7,9 @@ from fantasy_analysis.domain.models import (
     Lineup,
     LineupEntry,
     MatchupKind,
+    NFLTeam,
     Player,
+    PlayerStats,
     Position,
     Slot,
     SlotRules,
@@ -61,12 +63,28 @@ def to_team(espn_team: EspnTeam) -> Team:
     return Team(team_id=espn_team.team_id, name=espn_team.team_name, owner=owner)
 
 
-def to_player(box_player: BoxPlayer) -> Player:
+# player ID -> that player's week -> stats dict, shared by all of the player's Player objects
+StatsRegistry = dict[int, dict[int, PlayerStats]]
+# abbreviation -> the season's one NFLTeam object (becomes League.nfl_teams)
+NFLTeamRegistry = dict[str, NFLTeam]
+
+
+def to_nfl_team(pro_team: str, nfl_teams: NFLTeamRegistry) -> NFLTeam | None:
+    """espn-api's proTeam abbreviation as the season's NFLTeam; "None" means a free agent."""
+    if pro_team == "None":
+        return None
+    return nfl_teams.setdefault(pro_team, NFLTeam(pro_team))
+
+
+def to_player(
+    box_player: BoxPlayer, stats_registry: StatsRegistry, nfl_teams: NFLTeamRegistry
+) -> Player:
     return Player(
         player_id=box_player.playerId,
         name=box_player.name,
         position=_lookup(POSITIONS, box_player.position, "position"),
-        pro_team=box_player.proTeam,
+        pro_team=to_nfl_team(box_player.proTeam, nfl_teams),
+        stats=stats_registry.setdefault(box_player.playerId, {}),
     )
 
 
@@ -81,12 +99,17 @@ def to_slot_rules(position_slot_counts: dict[str, int]) -> SlotRules:
     )
 
 
-def to_lineup(box_players: list[BoxPlayer], rules: SlotRules) -> Lineup:
+def to_lineup(
+    box_players: list[BoxPlayer],
+    rules: SlotRules,
+    stats_registry: StatsRegistry,
+    nfl_teams: NFLTeamRegistry,
+) -> Lineup:
     return Lineup(
         tuple(
             LineupEntry(
                 slot=_lookup(SLOTS, p.slot_position, "lineup slot"),
-                player=to_player(p),
+                player=to_player(p, stats_registry, nfl_teams),
                 points=p.points,
                 projected_points=p.projected_points,
             )
