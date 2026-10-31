@@ -19,6 +19,7 @@ dependencies = [
     "pydantic",
     "pydantic-settings",
     "espn-api>=1.0.1",
+    "adjusttext>=1.4.0",
 ]
 
 [dependency-groups]
@@ -27,7 +28,6 @@ dev = [
     "ipykernel",
     "pytest",
     "ruff",
-    "nbstripout>=0.9.1",
 ]
 
 [build-system]

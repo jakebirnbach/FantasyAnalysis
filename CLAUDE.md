@@ -46,10 +46,9 @@ To test-run a notebook without touching the committed file, execute it into the 
 ## Git and privacy
 
 - **The GitHub repo is public** (github.com/jakebirnbach/FantasyAnalysis). Never commit `.env`,
-  ESPN cookies, the league ID, files in `data/`, or notebook outputs (they contain league
-  members' real names).
-- Notebook outputs are stripped on commit by nbstripout (`.gitattributes` + a filter in
-  `.git/config`). The filter is required, so commits fail if `.venv` is missing: run `uv sync`.
+  ESPN cookies (`espn_s2`, `SWID`) or files in `data/`.
+- Notebook outputs **are** committed, by the user's choice. They include league data and
+  members' real names. Before committing, check that no output prints credentials.
 - Commit and push as the personal account: git `user.email` is set to jakebirnbach@gmail.com
   for this repo, and `gh` must have `jakebirnbach` as the active account
   (`gh auth switch --user jakebirnbach`), not the work account.
