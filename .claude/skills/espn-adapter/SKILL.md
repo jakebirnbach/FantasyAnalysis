@@ -36,10 +36,14 @@ Don't write a separate HTTP client.
 
 - Positions: `D/ST` → `DST`. QB/RB/WR/TE/K pass through.
 - Slots: `RB/WR/TE` → `FLEX`, `BE` → `BENCH`, `D/ST` → `DST`. QB/RB/WR/TE/K/IR pass through.
+- Lineup rules: `to_slot_rules(settings.position_slot_counts)` builds each season's `SlotRules`
+  from ESPN's slot counts (zero counts dropped), and `get_league` passes them to every
+  `to_lineup`. espn-api types `League.settings` as its base class, so the repository narrows
+  it to `espn_api.football.settings.Settings` before reading `position_slot_counts`.
 - Matchup kind (`playoffTierType`): `NONE` → `REGULAR_SEASON`; `WINNERS_BRACKET` → `PLAYOFF`;
   `WINNERS_CONSOLATION_LADDER` and `LOSERS_CONSOLATION_LADDER` → `CONSOLATION`.
 - An unknown value raises `ValueError("unsupported ESPN ...")`. That's deliberate: add it to the
-  table (and to the domain `Slot`/`Position`/`SLOT_RULES` if it's a new concept) rather than
+  table (and to the domain `Slot`/`Position`/`SLOT_POSITIONS` if it's a new concept) rather than
   dropping data silently. ESPN has many more slot IDs (`OP`, `TQB`, IDP slots and others, in
   `espn_api.football.constant.POSITION_MAP`) that this league doesn't use.
 - Owner: the team's first ESPN member record, as `"firstName lastName"`, falling back to
@@ -75,14 +79,15 @@ Don't write a separate HTTP client.
 
 ## Verifying changes
 
-Run against real data for an in-progress season and a finished one:
+Run against real data for an in-progress season, a finished one, and one from before the
+2025 bench change (2022–2024 have a different lineup layout):
 
 ```python
 from fantasy_analysis.config import settings
 from fantasy_analysis.infrastructure.espn import EspnLeagueRepository
 
 repo = EspnLeagueRepository.from_settings(settings)
-for season in (2026, 2025):
+for season in (2026, 2025, 2024):
     league = repo.get_league(season)
 ```
 

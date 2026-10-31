@@ -1,5 +1,7 @@
 """LeagueRepository backed by ESPN."""
 
+from espn_api.football.settings import Settings as EspnSettings
+
 from fantasy_analysis.config import Settings
 from fantasy_analysis.domain.models import League, Matchup, Team
 from fantasy_analysis.infrastructure.espn import mappers
@@ -25,6 +27,9 @@ class EspnLeagueRepository:
         """
         espn = connect(self.league_id, season, self.espn_s2, self.swid)
         teams = {t.team_id: mappers.to_team(t) for t in espn.teams}
+        espn_settings = espn.settings
+        assert isinstance(espn_settings, EspnSettings)  # espn-api types it as the base class
+        rules = mappers.to_slot_rules(espn_settings.position_slot_counts)
 
         matchups: list[Matchup] = []
         player_team_cache: dict = {}  # shared across weeks so bye-week players keep their team
@@ -33,12 +38,12 @@ class EspnLeagueRepository:
                 if box.home_team is None:  # ESPN puts a bye team on the home side
                     continue
                 home = teams[box.home_team.team_id]
-                home.lineups[week] = mappers.to_lineup(box.home_lineup)
+                home.lineups[week] = mappers.to_lineup(box.home_lineup, rules)
 
                 away: Team | None = None
                 if box.away_team is not None:
                     away = teams[box.away_team.team_id]
-                    away.lineups[week] = mappers.to_lineup(box.away_lineup)
+                    away.lineups[week] = mappers.to_lineup(box.away_lineup, rules)
 
                 matchups.append(
                     Matchup(

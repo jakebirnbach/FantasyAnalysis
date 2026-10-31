@@ -12,22 +12,40 @@ MatchupKind = Literal["REGULAR_SEASON", "PLAYOFF", "CONSOLATION"]
 
 ALL_POSITIONS: frozenset[Position] = frozenset({"QB", "RB", "WR", "TE", "K", "DST"})
 
-# Lineup layout for this league: slot -> (positions allowed in it, max players in it)
-SLOT_RULES: dict[Slot, tuple[frozenset[Position], int]] = {
-    "QB": (frozenset({"QB"}), 1),
-    "RB": (frozenset({"RB"}), 2),
-    "WR": (frozenset({"WR"}), 3),
-    "TE": (frozenset({"TE"}), 1),
-    "FLEX": (frozenset({"RB", "WR", "TE"}), 1),
-    "DST": (frozenset({"DST"}), 1),
-    "K": (frozenset({"K"}), 1),
-    "BENCH": (ALL_POSITIONS, 6),
-    "IR": (ALL_POSITIONS, 1),
+# Positions each slot accepts. These are fixed; how many of each slot a league has can change
+# from season to season.
+SLOT_POSITIONS: dict[Slot, frozenset[Position]] = {
+    "QB": frozenset({"QB"}),
+    "RB": frozenset({"RB"}),
+    "WR": frozenset({"WR"}),
+    "TE": frozenset({"TE"}),
+    "FLEX": frozenset({"RB", "WR", "TE"}),
+    "DST": frozenset({"DST"}),
+    "K": frozenset({"K"}),
+    "BENCH": ALL_POSITIONS,
+    "IR": ALL_POSITIONS,
 }
 NON_STARTING_SLOTS: frozenset[Slot] = frozenset({"BENCH", "IR"})
-# Max players outside IR. The bench can exceed its nominal size when a starting slot is left empty.
-ACTIVE_ROSTER_SIZE = sum(
-    max_players for slot, (_, max_players) in SLOT_RULES.items() if slot != "IR"
+
+# A season's lineup layout: slot -> (positions allowed in it, max players in it)
+SlotRules = dict[Slot, tuple[frozenset[Position], int]]
+
+
+def slot_rules(counts: dict[Slot, int]) -> SlotRules:
+    """Lineup rules from a season's slot counts. Slots with a count of 0 are left out."""
+    return {slot: (SLOT_POSITIONS[slot], n) for slot, n in counts.items() if n}
+
+
+def active_roster_size(rules: SlotRules) -> int:
+    """Max players outside IR. The bench can exceed its nominal size when a starting slot is
+    left empty, so this, not the bench size, is the real limit."""
+    return sum(max_players for slot, (_, max_players) in rules.items() if slot != "IR")
+
+
+# This league's current layout (2025 onward; 2022-2024 had 7 bench spots). Used when a Lineup
+# isn't given a season's rules.
+SLOT_RULES: SlotRules = slot_rules(
+    {"QB": 1, "RB": 2, "WR": 3, "TE": 1, "FLEX": 1, "DST": 1, "K": 1, "BENCH": 6, "IR": 1}
 )
 
 
@@ -58,13 +76,17 @@ class LineupEntry:
 
 @dataclass(frozen=True)
 class Lineup:
-    """A team's lineup for one week. Starting slots may be left empty."""
+    """A team's lineup for one week, validated against that season's lineup rules.
+    Starting slots may be left empty."""
 
     entries: tuple[LineupEntry, ...]
+    rules: SlotRules = field(default_factory=lambda: SLOT_RULES, compare=False, repr=False)
 
     def __post_init__(self):
         for entry in self.entries:
-            allowed, _ = SLOT_RULES[entry.slot]
+            if entry.slot not in self.rules:
+                raise ValueError(f"this season's lineup has no {entry.slot} slot")
+            allowed, _ = self.rules[entry.slot]
             if entry.player.position not in allowed:
                 raise ValueError(
                     f"{entry.player.name} ({entry.player.position}) can't play {entry.slot}"
@@ -72,13 +94,14 @@ class Lineup:
 
         slot_counts: Counter[Slot] = Counter(e.slot for e in self.entries)
         for slot, count in slot_counts.items():
-            _, max_players = SLOT_RULES[slot]
+            _, max_players = self.rules[slot]
             if slot != "BENCH" and count > max_players:
                 raise ValueError(f"{slot} holds at most {max_players} players, got {count}")
 
         active = len(self.entries) - slot_counts["IR"]
-        if active > ACTIVE_ROSTER_SIZE:
-            raise ValueError(f"at most {ACTIVE_ROSTER_SIZE} players outside IR, got {active}")
+        max_active = active_roster_size(self.rules)
+        if active > max_active:
+            raise ValueError(f"at most {max_active} players outside IR, got {active}")
 
         ids = [e.player.player_id for e in self.entries]
         if len(ids) != len(set(ids)):

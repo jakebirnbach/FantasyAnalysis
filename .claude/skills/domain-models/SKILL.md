@@ -1,6 +1,6 @@
 ---
 name: domain-models
-description: Spec for the fantasy league domain entities in src/fantasy_analysis/domain/ — Player, LineupEntry, Lineup, Team, Matchup, League, the SLOT_RULES lineup layout, and their invariants. Use before adding, changing or validating domain objects, writing analysis or application code that consumes them, or when deciding where new data (stats, transactions, draft) belongs in the model. Triggers — "add a field to Player", "change the lineup rules", "model weekly stats", "add a Draft/Transaction entity", "why does Lineup reject this", "how are points calculated", "domain objects", "domain models".
+description: Spec for the fantasy league domain entities in src/fantasy_analysis/domain/ — Player, LineupEntry, Lineup, Team, Matchup, League, per-season lineup rules (SlotRules), and their invariants. Use before adding, changing or validating domain objects, writing analysis or application code that consumes them, or when deciding where new data (stats, transactions, draft) belongs in the model. Triggers — "add a field to Player", "change the lineup rules", "model weekly stats", "add a Draft/Transaction entity", "why does Lineup reject this", "how are points calculated", "domain objects", "domain models".
 ---
 
 # Domain models
@@ -39,18 +39,27 @@ playoff stats.
 Schedules belong to the league as `Matchup` objects, not to teams. An earlier
 `Team.schedule: dict[week, Team]` created reference cycles and couldn't hold scores.
 
-## Lineup rules (`SLOT_RULES`)
+## Lineup rules (`SlotRules`)
 
-`SLOT_RULES` maps each slot to (allowed positions, max players). It matches the league's ESPN
-settings: QB 1, RB 2, WR 3, TE 1, FLEX 1 (RB/WR/TE), DST 1, K 1, BENCH 6, IR 1. If the
-league's settings change, this table is the only thing to edit. All validation is derived
-from it.
+Lineup layouts change between seasons, so the rules are data, not a constant:
+- `SLOT_POSITIONS`: which positions each slot accepts. This never changes.
+- `SlotRules`: a season's layout, mapping slot → (allowed positions, max players). Build one
+  with `slot_rules({"QB": 1, ..., "BENCH": 6})`.
+- Every `Lineup` carries its season's `rules` (`compare=False`). The ESPN adapter builds them
+  from each season's `position_slot_counts`.
+- `SLOT_RULES` is the current layout (QB 1, RB 2, WR 3, TE 1, FLEX 1, DST 1, K 1, BENCH 6,
+  IR 1). It's only the default for a `Lineup` built without rules, e.g. in tests.
 
-`Lineup.__post_init__` checks:
-1. Each player's position is allowed in their slot.
-2. No slot except BENCH is over its max.
-3. Active players (everyone not on IR) ≤ `ACTIVE_ROSTER_SIZE` (16, calculated from the table).
-4. No player appears twice (by `player_id`).
+This league's history: identical starting lineups every season, but **7 bench spots in
+2022–2024 and 6 from 2025**. Validating older seasons against today's layout fails ("at most
+16 players outside IR, got 17"), which is why the rules are per season.
+
+`Lineup.__post_init__` checks, against its own `rules`:
+1. Every slot used exists in that season's layout.
+2. Each player's position is allowed in their slot.
+3. No slot except BENCH is over its max.
+4. Active players (everyone not on IR) ≤ `active_roster_size(rules)` (16 now, 17 in 2022–2024).
+5. No player appears twice (by `player_id`).
 
 Two rules come from real league data:
 - **Starting slots may be empty.** Managers forget lineups, or bench an injured or bye-week
@@ -65,7 +74,8 @@ Two rules come from real league data:
 - Draft, transactions, free agents, waivers.
 - Multi-week matchups: each `Matchup` is assumed to be one week. True for this league
   (`playoff_matchup_period_length` = 1).
-- League settings as an entity: slot layout and scoring are hardcoded for this league.
+- Other league settings (scoring rules, playoff format) aren't modeled. Only the lineup
+  layout is per season.
 
 When adding one of these, keep the same pattern: a domain entity with no ESPN names, a mapper in
 `infrastructure/espn/mappers.py`, and assembly in the repository.

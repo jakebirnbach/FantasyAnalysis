@@ -10,7 +10,9 @@ from fantasy_analysis.domain.models import (
     Player,
     Position,
     Slot,
+    SlotRules,
     Team,
+    slot_rules,
 )
 
 POSITIONS: dict[str, Position] = {
@@ -68,7 +70,18 @@ def to_player(box_player: BoxPlayer) -> Player:
     )
 
 
-def to_lineup(box_players: list[BoxPlayer]) -> Lineup:
+def to_slot_rules(position_slot_counts: dict[str, int]) -> SlotRules:
+    """A season's lineup rules from ESPN's settings.position_slot_counts."""
+    return slot_rules(
+        {
+            _lookup(SLOTS, slot, "lineup slot"): count
+            for slot, count in position_slot_counts.items()
+            if count
+        }
+    )
+
+
+def to_lineup(box_players: list[BoxPlayer], rules: SlotRules) -> Lineup:
     return Lineup(
         tuple(
             LineupEntry(
@@ -78,7 +91,8 @@ def to_lineup(box_players: list[BoxPlayer]) -> Lineup:
                 projected_points=p.projected_points,
             )
             for p in box_players
-        )
+        ),
+        rules=rules,
     )
 
 
